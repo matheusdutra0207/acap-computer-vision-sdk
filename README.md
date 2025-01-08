@@ -82,3 +82,26 @@ The VDO integration allows accessing the camera's video streams through the Open
 * `/axis/tfproto`: TensorFlow protobuf files
   * TensorFlow and TensorFlow Serving protobuf files for compiling applications that use their API. An example of how they are used is available in the [object-detector-cpp example](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/main/object-detector-cpp).
   * *Only available on the `-devel` image as the proto files are only used for compilation*
+
+
+## python3.12
+
+```sh
+FROM matheusdutra0207/acap-computer-vision-sdk:python-3.12.3 AS python3.12  
+FROM matheusdutra0207/acap-computer-vision-sdk:python-numpy-1.26.4 AS numpy
+FROM matheusdutra0207/acap-computer-vision-sdk:python-opencv-4.8.0 AS opencv
+FROM matheusdutra0207/acap-computer-vision-sdk:openblas-0.3.14 AS openblas
+
+FROM arm32v7/ubuntu:20.04
+
+# # Add the CV packages
+COPY --from=opencv /target-root /
+COPY --from=python3.12 /target-root /
+COPY --from=numpy /target-root /
+COPY --from=openblas /target-root /
+
+# Add your application files
+COPY app /app
+WORKDIR /app
+CMD ["python3", "teste.py"]
+```
