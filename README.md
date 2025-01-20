@@ -1,22 +1,8 @@
 # ACAP Computer Vision SDK
 
-> [!Note]
->
-> - The ACAP Computer Vision SDK has been archived as its components have been refactored: utility
->   libraries and scripts are now available in [ACAP Runtime](https://github.com/AxisCommunications/acap-runtime).
->   For usage of the new setup, see the [examples repository](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples).
+##  Python 3.12
 
-> [!Note]
->
-> - New Axis products released on AXIS OS 12.x will not have container support.
-> - [All products with existing container support](https://www.axis.com/support/tools/product-selector/shared/%5B%7B%22index%22%3A%5B10%2C0%5D%2C%22value%22%3A%22ARTPEC-8%22%7D%2C%7B%22index%22%3A%5B10%2C2%5D%2C%22value%22%3A%22Yes%22%7D%5D)
->   will be supported until end of 2031 when [AXIS OS 2026 LTS](https://help.axis.com/en-us/axis-os)
->   reaches end of life.
-> - The recommended way to build analytics, computer vision and machine learning applications on
->   Axis devices with ACAP support, is to use the ACAP Native SDK. For usage see the [acap-native-sdk-examples](https://github.com/AxisCommunications/acap-native-sdk-examples)
->   repo.
-
-This repository holds the Dockerfiles that create the ACAP Computer Vision SDK images. These images bundle computer vision libraries and packages that are compiled for the AXIS camera platforms. The full documentation on how to use the SDK can be found in the [ACAP documentation](https://axiscommunications.github.io/acap-documentation/docs/api/computer-vision-sdk-apis.html). Application examples, demonstrating e.g., [object detection in Python](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/main/object-detector-python), are available in the [acap-computer-vision-sdk-examples repository](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples). The SDK's Dockerfile itself can be used as a reference for how the SDK images are configured, or as a guide to rebuild select components with parameters that better fit your application.
+This branch was created to update Python to version 3.12, as well as to update the OpenCV and NumPy libraries to versions 4.8.0 and 1.26.4, respectively. The manifest file responsible for these changes is located at  `/armv7hf/Dockerfile.armv7hf`.
 
 The Computer Vision SDK image packages are located under this `/axis` directory. The directory of a package, e.g., `/axis/opencv`, contain
 the files needed for the applications as seen from the root of the application container. Thus, merging e.g., `/axis/opencv` with the root `/` of your
@@ -45,63 +31,32 @@ OpenCV, Python, NumPy (OpenCV-Python dependency) and OpenBLAS (optimized math fu
 Thus, the Dockerfile for your application could be set up as:
 
 ```sh
-FROM axisecp/acap-computer-vision-sdk:latest-armv7hf AS cv-sdk
-FROM arm32v7/ubuntu:20.04
+FROM matheusdutra0207/acap-computer-vision-skd-ubuntu20.04:acap AS sdk
+FROM --platform=linux/arm/v7 arm32v7/ubuntu:20.04
 
-# Add the CV packages
-COPY --from=cv-sdk /axis/opencv /
-COPY --from=cv-sdk /axis/python /
-COPY --from=cv-sdk /axis/python-numpy /
-COPY --from=cv-sdk /axis/openblas /
+# # Add the CV packages
+COPY --from=sdk /axis/python /
+COPY --from=sdk /axis/numpy /
+COPY --from=sdk /axis/openblas /
+COPY --from=sdk /axis/opencv /
 
-# Add your application files
-COPY app /app
-WORKDIR /app
-CMD ["python3", "some_computer_vision_script.py"]
+# Some applications written in Python 3
+CMD ["sh", "-c", "python3 --version && python3 -c 'import numpy; print(f\"NumPy version: {numpy.__version__}\")' && python3 -c 'import cv2; print(f\"OpenCV version: {cv2.__version__}\")'"]
 ```
 
 ## Contents
 
-* `/axis/opencv`: [OpenCV 4.5.1](https://github.com/opencv/opencv) with [VDO](https://www.axis.com/products/online-manual/s00004#t10157890)
+* `/axis/opencv`: [OpenCV 4.8.0](https://github.com/opencv/opencv) with [VDO](https://www.axis.com/products/online-manual/s00004#t10157890)
   * A computer vision library with functionality that covers many different fields within computer vision.
 The VDO integration allows accessing the camera's video streams through the OpenCV VideoCapture class. Compiled with OpenBLAS.
 * `/axis/python`: Python
-  * A Python 3.8 installation to allow easy prototyping and development of applications.
+  * A Python 3.12 installation to allow easy prototyping and development of applications.
 * Python packages
   * `/axis/python-numpy`: [NumPy](https://github.com/numpy/numpy) - Compiled with OpenBLAS.
-  * `/axis/python-scipy`: [SciPy](https://github.com/scipy/scipy) - Compiled with OpenBLAS.
-  * `/axis/python-pytesseract`: [PyTesseract](https://github.com/madmaze/pytesseract) - A Python interface to the Tesseract OCR engine.
-  * `/axis/python-tfserving`: [A TensorFlow Serving inference client](./sdk/tfserving/tf_proto_utils.py#L123) - Allows interfacing with a model server using the TensorFlow Serving prediction gRPC API.
 * `/axis/tesseract`: [Tesseract](https://github.com/tesseract-ocr/tesseract)
   * An OCR engine developed by Google. Requires model from e.g., [tessdata](https://github.com/tesseract-ocr/tessdata) to be downloaded and have its location specified in the application.
 * `/axis/openblas`: [OpenBLAS](https://github.com/xianyi/OpenBLAS)
   * A library with optimized linear algebra operations which can accelerate many applications.
-* `/axis/opencl`: [OpenCL](https://www.khronos.org/registry/OpenCL/sdk/1.2/docs/man/xhtml/)
-  * A general purpose parallel programming language.
-  * *Only available on the `-devel` image as the runtime files are mounted from the camera*
-* `/axis/tfproto`: TensorFlow protobuf files
-  * TensorFlow and TensorFlow Serving protobuf files for compiling applications that use their API. An example of how they are used is available in the [object-detector-cpp example](https://github.com/AxisCommunications/acap-computer-vision-sdk-examples/tree/main/object-detector-cpp).
-  * *Only available on the `-devel` image as the proto files are only used for compilation*
 
 
-## python3.12
 
-```sh
-FROM matheusdutra0207/acap-computer-vision-sdk:python-3.12.3 AS python3.12  
-FROM matheusdutra0207/acap-computer-vision-sdk:python-numpy-1.26.4 AS numpy
-FROM matheusdutra0207/acap-computer-vision-sdk:python-opencv-4.8.0 AS opencv
-FROM matheusdutra0207/acap-computer-vision-sdk:openblas-0.3.14 AS openblas
-
-FROM arm32v7/ubuntu:20.04
-
-# # Add the CV packages
-COPY --from=opencv /target-root /
-COPY --from=python3.12 /target-root /
-COPY --from=numpy /target-root /
-COPY --from=openblas /target-root /
-
-# Add your application files
-COPY app /app
-WORKDIR /app
-CMD ["python3", "teste.py"]
-```
