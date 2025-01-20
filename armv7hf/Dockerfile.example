@@ -1,0 +1,10 @@
+FROM matheusdutra0207/acap-computer-vision-skd-ubuntu20.04:acap AS sdk
+FROM --platform=linux/arm/v7 arm32v7/ubuntu:20.04
+
+# # Add the CV packages
+COPY --from=sdk /axis/python /
+COPY --from=sdk /axis/numpy /
+COPY --from=sdk /axis/openblas /
+COPY --from=sdk /axis/opencv /
+
+CMD ["sh", "-c", "python3 --version && python3 -c 'import numpy; print(f\"NumPy version: {numpy.__version__}\")' && python3 -c 'import cv2; print(f\"OpenCV version: {cv2.__version__}\")'"]
