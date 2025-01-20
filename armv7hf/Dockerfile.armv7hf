@@ -5,22 +5,22 @@ ARG ARCH_CFLAGS="-O2 -mthumb -mfpu=neon -mfloat-abi=hard -mcpu=cortex-a9 -fomit-
 ARG AXIS_ARCH=armv7hf
 # BUILD_ROOT defines where in the build containers the building takes place
 ARG BUILD_ROOT=/build-root
-# DOCKERHUB_ARCH is the DockerHub platform descriptor
-ARG UBUNTU_ARCH=armhf
 # OPENCV_MODULES defines what OpenCV modules to build
 ARG OPENCV_MODULES=core,imgproc,imgcodecs,videoio,objdetect,python3,video
+# SDK_ROOT_DIR defines the root directory of the final SDK images
+ARG SDK_ROOT_DIR=/axis/
+# UBUNTU_ARCH is the Ubuntu platform descriptor
+ARG UBUNTU_ARCH=armhf
 # TARGET_TOOLCHAIN is the name of the compilation toolchain for the target platform
 ARG TARGET_TOOLCHAIN=arm-linux-gnueabihf
-# DOCKERHUB_ARCH is the DockerHub platform descriptor
-ARG DOCKERHUB_ARCH=arm32v7
 # TARGET_ROOT defines where in the build containers the resulting application is put
 ARG TARGET_ROOT=/target-root
-#CMAKE_TOOLCHAIN_FOLDER is the name of the CMAKE toolchain folder
-ARG CMAKE_TOOLCHAIN_FOLDER=arm-gnueabi
 # UBUNTU_VERSION defines the ubuntu version of the build and SDK containers
-ARG UBUNTU_VERSION=24.04
+ARG UBUNTU_VERSION=20.04
 # UBUNTU_CODENAME should be the ubuntu codename of the UBUNTU_VERSION used, e.g., focal, hirsute, ..
-ARG UBUNTU_CODENAME=noble
+ARG UBUNTU_CODENAME=focal
+
+ARG PLATFORM_ARM=linux/arm/v7
 
 #-- Versions of installed packages defined as repository tags --#
 ARG NUMPY_VERSION=v1.26.4
@@ -34,10 +34,11 @@ ARG OPENCV_BUILD_CORES=2
 ARG PYTHON_BUILD_CORES=4
 ARG NUMPY_BUILD_CORES=4
 ARG SCIPY_BUILD_CORES=4
+
+#-- ACAP SDK configuration --#
 ARG ACAP_SDK_VERSION=1.1
-ARG ACAP_SDK_IMAGE=acap-native-sdk
-ARG REPO=axisecp
-ARG ACAP_SDK_TAG=${ACAP_SDK_VERSION}-${AXIS_ARCH}-ubuntu20.04
+
+ARG CMAKE_TOOLCHAIN_FOLDER=arm-gnueabi
 
 
 # Create a base image with build tools, env vars, etc.,
@@ -78,6 +79,7 @@ deb [arch=armhf,arm64] http://ports.ubuntu.com/ubuntu-ports/ $UBUNTU_CODENAME-se
 
 # Get crosscompilation toolchain and related packages
 RUN dpkg --add-architecture $UBUNTU_ARCH
+
 RUN apt-get update && apt-get install -yf --no-install-recommends \
         autoconf \
         automake \
@@ -92,13 +94,17 @@ RUN apt-get update && apt-get install -yf --no-install-recommends \
         gfortran \
         libtool \
         pkg-config \
-        python3-dev \
-        python3-pip \
-        python3-venv \
         wget \
  && update-ca-certificates \
  && apt-get clean
-
+RUN apt-get update
+RUN apt install software-properties-common -y
+RUN add-apt-repository ppa:deadsnakes/ppa
+RUN apt update -y
+RUN apt-get install -yf --no-install-recommends python3.12    \ 
+                                                python3.12-dev \
+                                                python3.12-venv
+                                                
 RUN mkdir -p ${TARGET_ROOT}
 RUN mkdir -p ${BUILD_ROOT}
 
@@ -106,9 +112,8 @@ RUN mkdir -p ${BUILD_ROOT}
 # for paths, etc.
 RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-12]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
 
-
 # Create a emulated base image with build tools, env vars, etc.,
-FROM $DOCKERHUB_ARCH/ubuntu:${UBUNTU_VERSION} as build-base-arm
+FROM --platform=${PLATFORM_ARM} ubuntu:${UBUNTU_VERSION} as build-base-arm
 ARG BUILD_ROOT
 ENV DEBIAN_FRONTEND=noninteractive
 ARG PYTHON_VERSION
@@ -145,6 +150,7 @@ RUN mkdir -p ${BUILD_ROOT}
 # for paths, etc.
 RUN echo python${PYTHON_VERSION} | sed 's/\([0-9]\.[0-12]*\)\.\([0-9]*\)/\1/' > /tmp/python_version
 
+# Crosscompile OpenBLAS
 FROM build-base AS build-openblas
 ARG ARCH_CFLAGS
 ARG OPENBLAS_BUILD_CORES
@@ -154,6 +160,8 @@ RUN git clone --depth 1 --branch ${OPENBLAS_VERSION}  https://github.com/xianyi/
 WORKDIR ${BUILD_ROOT}/OpenBLAS
 RUN HAVE_NEON=1 make -j ${OPENBLAS_BUILD_CORES} TARGET=CORTEXA9 CC=$TARGET_TOOLCHAIN-gcc FC=$TARGET_TOOLCHAIN-gfortran HOSTCC=gcc
 RUN make install PREFIX=$TARGET_ROOT/usr
+
+
 
 # Crosscompile Python
 FROM build-base as build-python-cross
@@ -165,21 +173,14 @@ WORKDIR /usr/bin
 RUN ln -s python3.*[0-12] python
 
 # Get optional Python module dependencies
-RUN apt-get update && apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
-        libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libssl3t64:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline-dev:$UBUNTU_ARCH
-# RUN apt-get update && apt-get install -y software-properties-common && \
-#     add-apt-repository universe && apt-get update && \
-#     apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
-#         libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libssl3:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline-dev:$UBUNTU_ARCH
-
-# libssl3:$UBUNTU_ARCH to libssl3t64:$UBUNTU_ARCH 
-
+RUN apt-get install --reinstall --download-only -o=dir::cache=$BUILD_ROOT/python_deps -y -f \
+        libbz2-dev:$UBUNTU_ARCH zlib1g-dev:$UBUNTU_ARCH libssl1.1:$UBUNTU_ARCH libffi-dev:$UBUNTU_ARCH libssl-dev:$UBUNTU_ARCH libreadline6-dev:$UBUNTU_ARCH
 WORKDIR $TARGET_ROOT
 RUN for f in $BUILD_ROOT/python_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT; done
-# RUN mv $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/ && \
-#     rm -rf $TARGET_ROOT/lib
+RUN mv $TARGET_ROOT/lib/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/ && \
+    rm -rf $TARGET_ROOT/lib
 
-# # Copy selected libs we need for python compilation
+# Copy selected libs we need for python compilation
 WORKDIR $TARGET_ROOT/usr/lib/$TARGET_TOOLCHAIN/
 RUN cp -R libffi* libreadline* libssl* libz* libcrypt* libncurses* libunistring* libidn* libtinfo* libgpm* libbz2* ..
 RUN cp -r $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN/* $TARGET_ROOT/usr/include/ && rm -r $TARGET_ROOT/usr/include/$TARGET_TOOLCHAIN
@@ -203,8 +204,9 @@ RUN ./configure --host=$TARGET_TOOLCHAIN --with-openssl=$TARGET_ROOT/usr \
     --build=x86_64-linux-gnu --prefix=$TARGET_ROOT/usr \
     --enable-shared --disable-ipv6 \
     ac_cv_file__dev_ptmx=no ac_cv_file__dev_ptc=no \
-    --with-lto --enable-optimizations \
-    --with-build-python=python3
+    --with-lto --enable-optimizations \ 
+    --with-build-python=python3.12
+
 RUN make HOSTPYTHON=/usr/bin/python3 -j $PYTHON_BUILD_CORES CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes
 RUN make altinstall HOSTPYTHON=python3 CROSS_COMPILE=$TARGET_TOOLCHAIN CROSS_COMPILE_TARGET=yes prefix=$TARGET_ROOT/usr
 WORKDIR $TARGET_ROOT/usr/bin
@@ -223,7 +225,7 @@ WORKDIR ${BUILD_ROOT}/pip
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 RUN $TARGET_ROOT/usr/bin/python3 get-pip.py
 # Fix to not use static paths to $TARGET_ROOT
-RUN sed -i '1s/.*/#!\/usr\/bin\/env python3/g' $TARGET_ROOT/usr/bin/pip*    
+RUN sed -i '1s/.*/#!\/usr\/bin\/env python3/g' $TARGET_ROOT/usr/bin/pip*  
 
 FROM build-base-arm AS build-python-numpy
 ARG ARCH_CFLAGS
@@ -251,13 +253,10 @@ RUN echo "[openblas]\n" \
          "library_dirs = ${BUILD_ROOT}/usr/lib\n" \
          >> site.cfg
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install cython
-RUN pip install setuptools==68.1.2
+RUN python3 -m pip install setuptools==68.1.2 ninja==1.11.1.3 meson-python==0.17.1
 RUN python3 -m pip install --upgrade cython==0.29.37
 RUN git submodule update --init
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 setup.py build || true
-# RUN rm -r branding/
-RUN pip install ninja==1.11.1.3
-RUN pip install meson-python==0.17.1
 RUN CC="gcc -I$BUILD_ROOT/usr/include -I$BUILD_ROOT/usr/include/$(cat /tmp/python_version) $ARCH_CFLAGS" python3 -m pip install . -v --prefix=$TARGET_ROOT/usr --no-build-isolation
 RUN mkdir -p ${BUILD_ROOT}/python-numpy-deps
 RUN apt-get install --reinstall --download-only -o=dir::cache=${BUILD_ROOT}/python-numpy-deps -y --no-install-recommends \
@@ -280,9 +279,6 @@ RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT;
 RUN for f in $BUILD_ROOT/opencv_deps/archives/*.deb; do dpkg -x $f $TARGET_ROOT/build; done
 RUN apt-get install -y libglib2.0-dev libsystemd0 libglib2.0-dev:$UBUNTU_ARCH libsystemd0:$UBUNTU_ARCH
 RUN cp -r /target-root/build/usr/lib/arm-linux-gnueabihf/glib-2.0 $TARGET_ROOT/usr/lib/
-
-
-
 
 # Setup build directory
 COPY --from=build-openblas $TARGET_ROOT $TARGET_ROOT/build
@@ -379,22 +375,11 @@ cp -r $TARGET_ROOT/lib/* $TARGET_ROOT/usr/lib/
 rm -rf $TARGET_ROOT/lib
 EOF
 
-# # Apenas para teste
 
-# FROM axisecp/acap-computer-vision-sdk:1.1-armv7hf AS cv-sdk
+FROM ubuntu:${UBUNTU_VERSION}
+# FROM --platform=linux/arm/v7 arm32v7/ubuntu:20.04
 
-# FROM arm32v7/ubuntu:24.04
-
-# # # Add the CV packages
-# # # Add the CV packages
-# COPY --from=build-opencv /target-root /
-# #COPY --from=cv-sdk /axis/python /
-# COPY --from=build-python /target-root /
-# COPY --from=build-python-numpy /target-root /
-# # COPY --from=cv-sdk  /axis/python-numpy /
-# COPY --from=cv-sdk /axis/openblas /
-
-# # Add your application files
-# COPY app /app
-# WORKDIR /app
-# CMD ["python3", "teste.py"]
+COPY --from=build-openblas /target-root /axis/openblas
+COPY --from=build-python /target-root /axis/python
+COPY --from=build-python-numpy /target-root /axis/numpy
+COPY --from=build-opencv /target-root /axis/opencv
