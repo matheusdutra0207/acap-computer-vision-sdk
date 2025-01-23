@@ -42,8 +42,6 @@ The VDO integration allows accessing the camera's video streams through the Open
   * A Python 3.12 installation to allow easy prototyping and development of applications.
 * Python packages
   * `/axis/python-numpy`: [NumPy](https://github.com/numpy/numpy) - Compiled with OpenBLAS.
-* `/axis/tesseract`: [Tesseract](https://github.com/tesseract-ocr/tesseract)
-  * An OCR engine developed by Google. Requires model from e.g., [tessdata](https://github.com/tesseract-ocr/tessdata) to be downloaded and have its location specified in the application.
 * `/axis/openblas`: [OpenBLAS](https://github.com/xianyi/OpenBLAS)
   * A library with optimized linear algebra operations which can accelerate many applications.
 
